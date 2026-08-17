@@ -1,0 +1,21 @@
+# Local Qdrant database (generated automatically at runtime)
+qdrant_db/
+
+# Python Virtual Environment
+venv/
+env/
+.venv/
+
+# Python bytecode & cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# IDE & OS files
+.vscode/
+.idea/
+.DS_Store
+
+# Temporary uploads or log files
+*.log
+*.tmp
