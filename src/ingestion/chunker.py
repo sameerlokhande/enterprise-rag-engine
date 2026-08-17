@@ -1,35 +1,57 @@
-from typing import List, Dict
+from typing import List, Dict, Any, Tuple
 from src.telemetry import get_tracer
 
 tracer = get_tracer()
 
+
 class ParentChildChunker:
-    def __init__(self, parent_size: int = 1024, child_size: int = 256, overlap: int = 32):
+    def __init__(self, parent_size: int = 1024, child_size: int = 256):
         self.parent_size = parent_size
         self.child_size = child_size
-        self.overlap = overlap
 
-    def chunk_document(self, text: str, doc_id: str) -> Dict[str, List[Dict]]:
+    def chunk(self, text: str, doc_id: str) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+        """Splits clean text into 1024-character Parent chunks and 256-character Child chunks."""
         with tracer.start_as_current_span("ingestion.parent_child_chunking") as span:
             parents = []
             children = []
 
-            p_step = self.parent_size - self.overlap
-            for p_idx, i in enumerate(range(0, len(text), p_step)):
-                p_text = text[i:i + self.parent_size]
-                parent_id = f"{doc_id}_P_{p_idx}"
-                parents.append({"parent_id": parent_id, "doc_id": doc_id, "text": p_text})
+            if not text:
+                span.set_attribute("chunking.parent_count", 0)
+                span.set_attribute("chunking.child_count", 0)
+                return parents, children
 
-                c_step = self.child_size - self.overlap
-                for c_idx, j in enumerate(range(0, len(p_text), c_step)):
-                    c_text = p_text[j:j + self.child_size]
+            parent_idx = 0
+            for i in range(0, len(text), self.parent_size):
+                parent_text = text[i : i + self.parent_size]
+                parent_id = f"{doc_id}_P{parent_idx}"
+                parent_idx += 1
+
+                parents.append({
+                    "parent_id": parent_id,
+                    "doc_id": doc_id,
+                    "text": parent_text
+                })
+
+                child_idx = 0
+                for j in range(0, len(parent_text), self.child_size):
+                    child_text = parent_text[j : j + self.child_size]
+                    child_id = f"{parent_id}_C{child_idx}"
+                    child_idx += 1
+
                     children.append({
-                        "child_id": f"{parent_id}_C_{c_idx}",
+                        "child_id": child_id,
                         "parent_id": parent_id,
                         "doc_id": doc_id,
-                        "text": c_text
+                        "text": child_text
                     })
 
             span.set_attribute("chunking.parent_count", len(parents))
             span.set_attribute("chunking.child_count", len(children))
-            return {"parents": parents, "children": children}
+            return parents, children
+
+    # Method aliases for flexibility
+    def split(self, text: str, doc_id: str):
+        return self.chunk(text, doc_id)
+
+    def process(self, text: str, doc_id: str):
+        return self.chunk(text, doc_id)

@@ -1,29 +1,31 @@
-from typing import List, Dict, Tuple
+from typing import List, Dict, Any, Tuple
 from src.telemetry import get_tracer
 
 tracer = get_tracer()
 
+
 class ConfidenceEvaluator:
-    def __init__(self, alpha_threshold: float = 0.35):
-        self.alpha_threshold = alpha_threshold
+    def __init__(self, threshold: float = 0.50):
+        self.threshold = threshold
 
-    def evaluate(self, reranked_chunks: List[Dict]) -> Tuple[bool, float, str]:
+    def evaluate(self, chunks: List[Dict[str, Any]]) -> Tuple[str, float]:
+        """Evaluates whether the top candidate chunk meets the minimum relevance score threshold."""
         with tracer.start_as_current_span("confidence.evaluator") as span:
-            span.set_attribute("evaluator.alpha_threshold", self.alpha_threshold)
+            span.set_attribute("evaluator.threshold", self.threshold)
 
-            if not reranked_chunks:
+            if not chunks:
                 span.set_attribute("evaluator.decision", "SHORT_CIRCUIT")
-                span.set_attribute("evaluator.reason", "NO_CONTEXT_RETRIEVED")
-                return False, 0.0, "NO_CONTEXT_RETRIEVED"
+                span.set_attribute("evaluator.top_score", 0.0)
+                return "SHORT_CIRCUIT", 0.0
 
-            top_score = reranked_chunks[0].get("relevance_score", 0.0)
+            top_chunk = chunks[0]
+            # Supports both 'relevance_score' (from FlashRank) and 'score' (from vector store)
+            top_score = top_chunk.get("relevance_score", top_chunk.get("score", 0.0))
             span.set_attribute("evaluator.top_score", top_score)
 
-            if top_score < self.alpha_threshold:
+            if top_score >= self.threshold:
+                span.set_attribute("evaluator.decision", "PASSED")
+                return "PASSED", top_score
+            else:
                 span.set_attribute("evaluator.decision", "SHORT_CIRCUIT")
-                span.set_attribute("evaluator.reason", "RELEVANCE_BELOW_THRESHOLD")
-                return False, top_score, f"RELEVANCE_BELOW_THRESHOLD ({top_score:.3f} < {self.alpha_threshold})"
-
-            span.set_attribute("evaluator.decision", "PASSED")
-            span.set_attribute("evaluator.reason", "CONTEXT_VERIFIED")
-            return True, top_score, "CONTEXT_VERIFIED"
+                return "SHORT_CIRCUIT", top_score
